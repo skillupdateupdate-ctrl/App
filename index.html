@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial Strategy Matrix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #020617;
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 50px 50px;
+            overflow: hidden;
+            touch-action: none;
+        }
+        .node {
+            position: absolute;
+            cursor: grab;
+            user-select: none;
+            transition: box-shadow 0.2s;
+        }
+        .node:active {
+            cursor: grabbing;
+        }
+        /* Six Hats Themes */
+        .hat-white { background: rgba(248, 250, 252, 0.1); border-color: #f8fafc; color: #f8fafc; }
+        .hat-red { background: rgba(239, 68, 68, 0.1); border-color: #ef4444; color: #fca5a5; }
+        .hat-black { background: rgba(39, 39, 42, 0.8); border-color: #52525b; color: #d4d4d8; }
+        .hat-yellow { background: rgba(234, 179, 8, 0.1); border-color: #eab308; color: #fde047; }
+        .hat-green { background: rgba(34, 197, 94, 0.1); border-color: #22c55e; color: #86efac; }
+        .hat-blue { background: rgba(59, 130, 246, 0.1); border-color: #3b82f6; color: #93c5fd; }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body class="text-slate-200 font-sans h-screen w-screen relative flex">
+
+    <!-- Control Panel -->
+    <div class="glass-panel w-80 h-full p-6 flex flex-col z-50 shadow-2xl">
+        <h1 class="text-xl font-bold tracking-wider mb-2 text-cyan-400">STRATEGY MATRIX</h1>
+        <p class="text-xs text-slate-400 mb-8 uppercase tracking-widest">4D / Spatial Analysis</p>
+
+        <form id="nodeForm" class="flex flex-col gap-4">
+            <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-400">STRATEGIC INPUT</label>
+                <textarea id="nodeText" rows="3" required
+                    class="w-full bg-slate-900/50 border border-slate-700 rounded p-2 text-sm focus:outline-none focus:border-cyan-500 transition-colors resize-none"
+                    placeholder="Enter objective or risk..."></textarea>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold mb-1 text-slate-400">THINKING HAT (LENS)</label>
+                <select id="nodeHat" class="w-full bg-slate-900/50 border border-slate-700 rounded p-2 text-sm focus:outline-none focus:border-cyan-500 appearance-none">
+                    <option value="white">White (Data & Facts)</option>
+                    <option value="red">Red (Emotion & Intuition)</option>
+                    <option value="black">Black (Risk & Caution)</option>
+                    <option value="yellow">Yellow (Value & Optimism)</option>
+                    <option value="green">Green (Creativity & Growth)</option>
+                    <option value="blue">Blue (Process & Control)</option>
+                </select>
+            </div>
+
+            <button type="submit" 
+                class="mt-2 bg-cyan-900 hover:bg-cyan-800 text-cyan-100 border border-cyan-700 rounded py-2 text-sm font-bold transition-all shadow-[0_0_15px_rgba(8,145,178,0.3)]">
+                DEPLOY NODE
+            </button>
+        </form>
+
+        <div class="mt-auto">
+            <button id="clearBtn" class="w-full text-xs text-slate-500 hover:text-red-400 transition-colors py-2 border border-transparent hover:border-red-900 rounded">
+                PURGE ALL DATA
+            </button>
+        </div>
+    </div>
+
+    <!-- Spatial Canvas -->
+    <div id="canvas" class="flex-1 relative w-full h-full overflow-hidden">
+        <!-- Nodes injected here via JS -->
+    </div>
+
+    <script>
+        // State Management
+        let nodes = JSON.parse(localStorage.getItem('quantumNodes')) || [];
+        const canvas = document.getElementById('canvas');
+        
+        // Drag State
+        let isDragging = false;
+        let currentDragId = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        // Initialization
+        function init() {
+            renderNodes();
+            setupEventListeners();
+        }
+
+        // Render loop
+        function renderNodes() {
+            canvas.innerHTML = '';
+            nodes.forEach(node => {
+                const el = document.createElement('div');
+                el.className = `node hat-${node.hat} border-l-4 rounded-r shadow-lg p-3 w-64 backdrop-blur-md flex justify-between items-start group`;
+                el.style.left = `${node.x}px`;
+                el.style.top = `${node.y}px`;
+                el.dataset.id = node.id;
+                
+                el.innerHTML = `
+                    <div class="text-sm font-medium leading-relaxed pr-2">${node.text}</div>
+                    <button class="delete-btn text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all text-lg leading-none">&times;</button>
+                `;
+
+                // Delete listener
+                el.querySelector('.delete-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteNode(node.id);
+                });
+
+                // Drag listeners
+                el.addEventListener('mousedown', startDrag);
+                canvas.appendChild(el);
+            });
+        }
+
+        // Core Logic: CRUD
+        function addNode(text, hat) {
+            // Spawn node in the center-ish of the canvas
+            const spawnX = window.innerWidth / 2 - 128;
+            const spawnY = window.innerHeight / 2 - 50 + (Math.random() * 100 - 50);
+
+            const newNode = {
+                id: Date.now().toString(),
+                text,
+                hat,
+                x: spawnX,
+                y: spawnY
+            };
+            
+            nodes.push(newNode);
+            saveState();
+            renderNodes();
+        }
+
+        function deleteNode(id) {
+            nodes = nodes.filter(n => n.id !== id);
+            saveState();
+            renderNodes();
+        }
+
+        function saveState() {
+            localStorage.setItem('quantumNodes', JSON.stringify(nodes));
+        }
+
+        // Core Logic: Spatial Dragging
+        function startDrag(e) {
+            if (e.target.closest('.delete-btn')) return;
+            
+            isDragging = true;
+            const el = e.target.closest('.node');
+            currentDragId = el.dataset.id;
+            
+            const rect = el.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            
+            el.style.zIndex = 100; // Bring to front while dragging
+        }
+
+        function onDrag(e) {
+            if (!isDragging || !currentDragId) return;
+            
+            const el = document.querySelector(`[data-id="${currentDragId}"]`);
+            if (!el) return;
+
+            // Calculate new position constrained by window bounds
+            const canvasRect = canvas.getBoundingClientRect();
+            let newX = e.clientX - canvasRect.left - dragOffsetX;
+            let newY = e.clientY - canvasRect.top - dragOffsetY;
+
+            el.style.left = `${newX}px`;
+            el.style.top = `${newY}px`;
+        }
+
+        function stopDrag(e) {
+            if (!isDragging || !currentDragId) return;
+            
+            // Update state with final position
+            const el = document.querySelector(`[data-id="${currentDragId}"]`);
+            const nodeIndex = nodes.findIndex(n => n.id === currentDragId);
+            
+            if (nodeIndex !== -1 && el) {
+                nodes[nodeIndex].x = parseInt(el.style.left);
+                nodes[nodeIndex].y = parseInt(el.style.top);
+                saveState();
+                el.style.zIndex = '';
+            }
+            
+            isDragging = false;
+            currentDragId = null;
+        }
+
+        // Event Setup
+        function setupEventListeners() {
+            document.getElementById('nodeForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const textInput = document.getElementById('nodeText');
+                const hatInput = document.getElementById('nodeHat');
+                
+                if(textInput.value.trim()) {
+                    addNode(textInput.value.trim(), hatInput.value);
+                    textInput.value = '';
+                }
+            });
+
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                if(confirm('Purge all strategic nodes? This cannot be undone.')) {
+                    nodes = [];
+                    saveState();
+                    renderNodes();
+                }
+            });
+
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', stopDrag);
+            // Window resize cleanup could go here to keep nodes in bounds
+        }
+
+        // Boot
+        init();
+    </script>
+</body>
+</html>
